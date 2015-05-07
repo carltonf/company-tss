@@ -73,7 +73,8 @@
 ;;; TODO too basic, too cumbersome, we need better support from ts-tools
 (defun company-tss--colorize-type (name sign type)
   "Use regexp to colorize TYPE. Return colorized type."
-  (if (string-empty-p sign)
+  (if (or (string-empty-p sign)
+          (not (member sign '("f" "v"))))
       ""
     (let ((desc type)
           (start 0))
@@ -180,6 +181,7 @@ about command line building."
                                   (kind (cdr (assoc 'kind e))))
                               (propertize name
                                           :annotation (company-tss-get-sign kind)
+                                          :kind kind
                                           ;; :meta (tss--get-company-summary type)
                                           )))
                           entries))))))
@@ -193,17 +195,36 @@ about command line building."
 ;; 1. `tss--active-code-prefix' uses text faces to make sure the current
 ;; point is in code (not string or comment region)
 (defun company-tss-get-prefix ()
-  (let ((curpt (point)))
-    (save-excursion
-      ;; `tss--get-active-code-prefix' only returns starting position for prefix,
-      ;; bad naming... but as noted in `tss--company-get-member-candates', the
-      ;; exact prefix doesn't matter, tss-server can handle it all.
-      (buffer-substring-no-properties
-       (tss--get-active-code-prefix "\\.\\([a-zA-Z0-9_]*\\)")
-       curpt))))
+  (let ((curpt (point))
+        ;; `tss--get-active-code-prefix' only returns starting position for prefix,
+        ;; bad naming... but as noted in `tss--company-get-member-candates', the
+        ;; exact prefix doesn't matter, tss-server can handle it all.
+        (start (save-excursion
+                 (or
+                  ;; member
+                  (tss--get-active-code-prefix "\\.\\([a-zA-Z0-9_]*\\)")
+                  ;; type
+                  (tss--get-active-code-prefix ": ?\\([a-zA-Z0-9_]*\\)")
+                  ;; new
+                  (tss--get-active-code-prefix "\\<new +\\([a-zA-Z0-9_]*\\)")
+                  ;; extends
+                  (tss--get-active-code-prefix " +extends +\\([a-zA-Z0-9_]*\\)")
+                  ;; implements
+                  (tss--get-active-code-prefix " +implements +\\([a-zA-Z0-9_]*\\)")
+                  ;; tag
+                  (tss--get-active-code-prefix "[^/] *<\\([a-zA-Z0-9_]*\\)")
+                  ;; anything
+                  ;; TODO what is this?
+                  (tss--get-active-code-prefix "\\(?:^\\|[^a-zA-Z0-9_.]\\) *\\([a-zA-Z0-9_]+\\)")))))
+    (when start
+      (buffer-substring-no-properties start curpt))))
 
 ;;; TODO have some idle/async way to fetch info about candidates in the
 ;;; background
+;;; TODO more info like: definition, location, even script snippets, references and etc.
+;;; 
+;;; BUG The following doesn't do well with advanced types like interface, in
+;;; fact I think the ts-tools return something too ambiguous....
 (defun company-tss-sync-get-data (candidate)
   (let* ((curbuf (current-buffer))
          (curpt (point))
@@ -223,7 +244,14 @@ about command line building."
          (info (when (tss--sync-server :updated-source updated-source)
                  (tss--get-server-response cmdstr :waitsec 2))))
     (add-text-properties 0 (length candidate)
-                         (let ((kind (cdr (assoc 'kind info)))
+                         (let ((kind
+                                ;; TODO due to some limits of ts-tools, kind
+                                ;; returned from this way is different from the
+                                ;; "completions-brief", very weird...., use
+                                ;; :annotation property instead as a workaround
+                                ;;
+                                ;; (cdr (assoc 'kind info))
+                                (get-text-property 0 :kind candidate))
                                (rawdesc (cdr (assoc 'type info)))
                                (doc-comment (cdr (assoc 'docComment info))))
                            `(:meta
