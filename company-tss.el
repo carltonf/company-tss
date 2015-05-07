@@ -42,7 +42,9 @@
   ;; need this?)
   nil)
 
-(defun tss--get-company-symbol (kind)
+;;; TODO using Unicode char to make it look better
+(defun company-tss-get-sign (kind)
+  "Return a symbolic sign for KIND"
   (let ((kind (tss--stringify-response-element kind)))
     (cond ((member kind '("keyword" "builtin-keyword"))  "w")
           ((string= kind "primitive type")               "p")
@@ -68,25 +70,76 @@
       (truncate-string-to-width
        str tss-company-summary-truncate-length 0 nil "..."))))
 
+;;; TODO too basic, too cumbersome, we need better support from ts-tools
+(defun company-tss--colorize-type (name sign type)
+  "Use regexp to colorize TYPE. Return colorized type."
+  (if (string-empty-p sign)
+      ""
+    (let ((desc type)
+          (start 0))
+      ;; colorize property
+      (string-match "(\\([^ \t]+\\))" desc start)
+      (add-face-text-property (match-beginning 1)
+                              (match-end 1)
+                              'font-lock-preprocessor-face
+                              nil desc)
+      (setq start (match-end 0))
+      ;; colorize candidate
+      (string-match name desc start)
+      (add-face-text-property (match-beginning 0)
+                              (match-end 0)
+                              'font-lock-function-name-face
+                              nil desc)
+      (setq start (match-end 0))
+      ;; colorize params or type
+      (pcase sign
+        ("f"
+         ;; colorize params
+         (while (and (< start (length desc))
+                     (string-match
+                      "\\(?:\\([a-zA-Z0-9_]+\\)\\|\)\\): [ \t]*\\([a-zA-Z0-9_]+\\)"
+                      desc start))
+           (when (match-beginning 1)
+             (add-face-text-property (match-beginning 1)
+                                     (match-end 1)
+                                     'font-lock-variable-name-face
+                                     nil desc))
+           (add-face-text-property (match-beginning 2)
+                                   (match-end 2)
+                                   'font-lock-type-face
+                                   nil desc)
+           (setq start (match-end 0))))
+        ;; colorize variable type
+        ("v"
+         (string-match ": [ \t]*\\([a-zA-Z0-9_]+\\)"
+                       desc start)
+         (add-face-text-property (match-beginning 1)
+                                 (match-end 1)
+                                 'font-lock-type-face
+                                 nil desc)))
+      desc)))
+
 (defun company-tss-format-document (name kind type doc)
   "Format a documentation for `company-doc', note the naming of
 the arguments are from `ts-tools', a very unfortunate and
 misleading names."
-  (let* ((sym (intern (tss--get-company-symbol kind)))
+  (let* ((sign (company-tss-get-sign kind))
          (kind (upcase (tss--stringify-response-element kind)))
-         (type (or type "unknown"))
+         (type (company-tss--colorize-type name sign
+                                           (or type "unknown")))
          (doc (or doc ""))
-         (typedesc (case sym
-                     (w "")
-                     (f (concat (propertize "Signature: "
-                                            'face 'apropos-symbol)
-                                type "\n\n"))
-                     (t (concat (propertize "Type: "
-                                            'face 'apropos-symbol)
-                                type "\n\n")))))
+         (typedesc (pcase sign
+                     ("w" "")
+                     ("f" (concat (propertize "Signature: "
+                                              'face 'apropos-symbol)
+                                  type "\n\n"))
+                     ("v" (concat (propertize "Type: "
+                                              'face 'apropos-symbol)
+                                  type "\n\n")))))
     (setq name (propertize name 'face 'font-lock-keyword-face))
-    (setq kind (propertize kind 'face 'font-lock-type-face))
-    (concat name " is " kind ".\n\n" typedesc
+    (setq kind (propertize kind 'face 'font-lock-preprocessor-face))
+    (concat name " is " kind ".\n\n"
+            typedesc
             (propertize "Comment: \n" 'face 'info-title-4)
             doc "\n")))
 
@@ -126,7 +179,7 @@ about command line building."
                             (let ((name (cdr (assoc 'name e)))
                                   (kind (cdr (assoc 'kind e))))
                               (propertize name
-                                          :annotation (tss--get-company-symbol kind)
+                                          :annotation (company-tss-get-sign kind)
                                           ;; :meta (tss--get-company-summary type)
                                           )))
                           entries))))))
@@ -207,3 +260,7 @@ about command line building."
     (doc-buffer (company-doc-buffer (company-tss-get-doc arg)))
     ;; TODO solve the formatting issue for annotations
     (annotation (company-tss-get-annotation arg)))) 
+
+(global-set-key (kbd "C-z t")
+                (lambda () (interactive)
+                  (company-begin-backend #'company-tss-member)))
