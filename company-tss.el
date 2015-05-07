@@ -88,13 +88,14 @@
             (propertize "Comment: \n" 'face 'info-title-4)
             doc "\n")))
 
-(defun company-tss-get-candidates (memberp)
+(defun company-tss-get-candidates (&optional prefix)
   "Retrieve completion candidates for current point.
 
 NOTE: 1. the prefix is NOT passed to tss-server, the ts-tools can
 figure this out according to file position directly. 
 
-2. TODO the use of MEMBERP is puzzling.
+2. MEMBERP is NOT used any more, retrieving candidates will
+always use completions-brief. Documents are retrieved later.
 
 see https://github.com/clausreinke/typescript-tools for details
 about command line building."
@@ -108,26 +109,26 @@ about command line building."
                 (let* ((posarg (tss--get-position-argument))
                        ;; TODO what `memberarg' used for? Don't find this
                        ;; argument in ts-tools doc
-                       (memberarg (cond (memberp "true")
-                                        (t       "false")))
+                       ;; (memberarg (cond (memberp "true")
+                       ;;                  (t       "false")))
                        (fpath (expand-file-name (buffer-file-name)))
-                       (cmdnm (cond (memberp "completions")
-                                    (t       "completions-brief")))
-                       (cmdstr (format "%s %s %s %s" cmdnm memberarg posarg fpath))
+                       (cmdstr (format "completions-brief %s %s"
+                                       posarg fpath))
+                       ;; ret format: isMemberCompletion,
+                       ;; isNewIdentifierLocation, and entries array, there can
+                       ;; also be a prefix string.
                        (ret (tss--get-server-response cmdstr :waitsec 2))
                        (entries (when (listp ret)
                                   (cdr (assoc 'entries ret)))))
                   (mapcar (lambda (e)
                             (let ((name (cdr (assoc 'name e)))
-                                  (kind (cdr (assoc 'kind e)))
-                                  (type (cdr (assoc 'type e)))
-                                  (doc  (cdr (assoc 'docComment e))))
-                              (tss--debug "Got candidate name[%s] kind[%s] type[%s]" name kind type)
+                                  (kind (cdr (assoc 'kind e))))
                               (propertize name
                                           :annotation (tss--get-company-symbol kind)
-                                          :meta (tss--get-company-summary type)
-                                          :doc
-                                          (tss--get-company-document name kind type doc))))
+                                          ;; :meta (tss--get-company-summary type)
+                                          ;; :doc
+                                          ;; (tss--get-company-document name kind type doc)
+                                          )))
                           entries))))))
     (yaxception:catch 'error e
       (tss--show-message "%s" (yaxception:get-text e))
@@ -148,11 +149,30 @@ about command line building."
        (tss--get-active-code-prefix "\\.\\([a-zA-Z0-9_]*\\)")
        curpt))))
 
+(defun company-tss-sync-get-data (candidate)
+  (let ((curbuf (current-buffer))
+        (curpt (point))
+        (curpath (buffer-file-name (current-buffer))))
+    (with-temp-buffer
+      (insert-buffer curbuf)
+      (goto-char curpt)
+      (company--insert-candidate candidate)
+      (when (let ((major-mode 'typescript-mode)) ;bypass `tss--active-p'
+              (tss--sync-server :path curpath
+                                ;; be explicit
+                                :buff (current-buffer)))
+        (let* ((posarg (tss--get-position-argument))
+               (fpath curpath)
+               (cmdstr (format "quickInfo %s %s"
+                               posarg fpath))
+               (info (tss--get-server-response cmdstr :waitsec 2)))
+          (pp-to-string info))))))
+
 (defun company-tss-get-meta (candidate)
   (get-text-property 0 :meta candidate))
 
 (defun company-tss-get-doc (candidate)
-  (get-text-property 0 :doc candidate))
+  (company-tss-sync-get-data candidate))
 
 (defun company-tss-get-annotation (candidate)
   (format " (%s)" (get-text-property 0 :annotation candidate)))
@@ -163,7 +183,7 @@ about command line building."
     (interactive (company-begin-backend 'company-tss-member))
     (prefix (company-tss-get-prefix))
     ;; arg is the prefix
-    (candidates (company-tss-get-candidates t))
+    (candidates (company-tss-get-candidates arg))
     ;; arg is the current selected candidate
     (meta (company-tss-get-meta arg))
     (doc-buffer (company-doc-buffer (company-tss-get-doc arg)))
