@@ -2,11 +2,10 @@
 ;;;
 ;;; TODO
 ;;; 
-;;; 1. better `tss--sync-server', modify the source sent on-the-fly to include
-;;; newly selected candidate, so we can have access to info from "definition",
-;;; "references" and etc. If we can have this, we can always use
-;;; "completions-brief" to speed completions up greatly. Try to reuse eldoc part
-;;; also
+;;; 1. DONE better `tss--sync-server', modify the source sent on-the-fly to
+;;; include newly selected candidate, so we can have access to info from
+;;; "definition", "references" and etc. If we can have this, we can always use
+;;; "completions-brief" to speed completions up greatly.
 ;;;
 ;;; 2. Caching according to lookup. Some lookup is too slow, we should use the
 ;;; "type" string returned from "quickInfo" to create a hash that have necessary
@@ -17,10 +16,10 @@
 (require 'cl-lib)
 
 ;;; These two variables serve to boost performance (not strictly necessary)
-(defvar tss--last-company-start-point 1)
-(make-variable-buffer-local 'tss--last-company-start-point)
-(defvar tss--last-company-candidates nil)
-(make-variable-buffer-local 'tss--last-company-candidates)
+(defvar-local tss--last-company-start-point 1)
+(defvar-local tss--last-company-candidates nil)
+(defvar-local company-tss-candidates-info-cache (make-hash-table :test #'equal)
+  "An info candidates cache(hash) to hold data for this completion")
 
 (defun tss--get-company-member-candidates ()
   (tss--trace "start get company member candidates.")
@@ -69,7 +68,10 @@
       (truncate-string-to-width
        str tss-company-summary-truncate-length 0 nil "..."))))
 
-(defun tss--get-company-document (name kind type doc)
+(defun company-tss-format-document (name kind type doc)
+  "Format a documentation for `company-doc', note the naming of
+the arguments are from `ts-tools', a very unfortunate and
+misleading names."
   (let* ((sym (intern (tss--get-company-symbol kind)))
          (kind (upcase (tss--stringify-response-element kind)))
          (type (or type "unknown"))
@@ -126,8 +128,6 @@ about command line building."
                               (propertize name
                                           :annotation (tss--get-company-symbol kind)
                                           ;; :meta (tss--get-company-summary type)
-                                          ;; :doc
-                                          ;; (tss--get-company-document name kind type doc)
                                           )))
                           entries))))))
     (yaxception:catch 'error e
@@ -149,30 +149,48 @@ about command line building."
        (tss--get-active-code-prefix "\\.\\([a-zA-Z0-9_]*\\)")
        curpt))))
 
+;;; TODO have some idle/async way to fetch info about candidates in the
+;;; background
 (defun company-tss-sync-get-data (candidate)
-  (let ((curbuf (current-buffer))
-        (curpt (point))
-        (curpath (buffer-file-name (current-buffer))))
-    (with-temp-buffer
-      (insert-buffer curbuf)
-      (goto-char curpt)
-      (company--insert-candidate candidate)
-      (when (let ((major-mode 'typescript-mode)) ;bypass `tss--active-p'
-              (tss--sync-server :path curpath
-                                ;; be explicit
-                                :buff (current-buffer)))
-        (let* ((posarg (tss--get-position-argument))
-               (fpath curpath)
-               (cmdstr (format "quickInfo %s %s"
-                               posarg fpath))
-               (info (tss--get-server-response cmdstr :waitsec 2)))
-          (pp-to-string info))))))
+  (let* ((curbuf (current-buffer))
+         (curpt (point))
+         (posarg nil)                   ;to be updated in the updated source
+         (prefix company-prefix)
+         (updated-source (with-temp-buffer
+                           (insert-buffer curbuf)
+                           (goto-char curpt)
+                           (let ((company-prefix prefix))
+                             ;; to handle prefix well, we need have company-prefix setup
+                             ;; TODO maybe we should handle prefix manually?
+                             (company--insert-candidate candidate))
+                           (setq posarg (tss--get-position-argument))
+                           (buffer-string)))
+         (fpath  (buffer-file-name))
+         (cmdstr (format "quickInfo %s %s" posarg fpath))
+         (info (when (tss--sync-server :updated-source updated-source)
+                 (tss--get-server-response cmdstr :waitsec 2))))
+    (add-text-properties 0 (length candidate)
+                         (let ((kind (cdr (assoc 'kind info)))
+                               (rawdesc (cdr (assoc 'type info)))
+                               (doc-comment (cdr (assoc 'docComment info))))
+                           `(:meta
+                             ,rawdesc
+                             :doc
+                             ,(company-tss-format-document
+                               candidate kind rawdesc doc-comment)))
+                         candidate)))
 
 (defun company-tss-get-meta (candidate)
-  (get-text-property 0 :meta candidate))
+  (let ((ret (get-text-property 0 :meta candidate)))
+    (if ret ret
+      (company-tss-sync-get-data candidate)
+      (company-tss-get-meta candidate))))
 
 (defun company-tss-get-doc (candidate)
-  (company-tss-sync-get-data candidate))
+  (let ((ret (get-text-property 0 :doc candidate)))
+    (if ret ret
+      (company-tss-sync-get-data candidate)
+      (company-tss-get-doc candidate))))
 
 (defun company-tss-get-annotation (candidate)
   (format " (%s)" (get-text-property 0 :annotation candidate)))
@@ -188,6 +206,4 @@ about command line building."
     (meta (company-tss-get-meta arg))
     (doc-buffer (company-doc-buffer (company-tss-get-doc arg)))
     ;; TODO solve the formatting issue for annotations
-    (annotation (company-tss-get-annotation arg))
-    ))
-
+    (annotation (company-tss-get-annotation arg)))) 
