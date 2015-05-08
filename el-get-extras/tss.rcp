@@ -1,0 +1,6 @@
+(:name tss
+       :website "https://github.com/carltonf/emacs-tss"
+       :description "Forked to support company backend, also other enhancements."
+       :type github
+       :pkgname "carltonf/emacs-tss"
+       :depends (json-mode auto-complete log4e yaxception))

@@ -1,23 +1,55 @@
 Company backend for [[https://github.com/aki2o/emacs-tss][aki2o/emacs-tss]] with colorful doc ;)
 
-*WIP*: incomplete and unstable yet.
+*WIP*: _usable_, might be unstable.
 
-* Usage
 *NOTE:* *This package can only work with my forked version of emacs-tss FOR NOW.*
 
-Patches are sent through pull requests already. The original author is busy now,
-so let's wait.
+* Features
 
-At the meantime, use my forked version at [[https://github.com/carltonf/emacs-tss][carltonf/emacs-tss]] and enjoy ;)
+** Colorful and more complete documentation
+*SCREENSHOT*
+
+
+* Usage
+_Patches are sent through pull requests already_. The original author is busy
+now, so let's wait for the merge.
+
+At the meantime, try my forked version at [[https://github.com/carltonf/emacs-tss][carltonf/emacs-tss]] and enjoy ;)
 
 ** For =el-get= user
 
-*PLANNED*
+under [[el-get-extras/]] you can find user recipes and init files.
 
-* TODO lists [0/1]
+** Manual install
+Add =tss.el= to load paths and have the following in your config file:
+
+#+BEGIN_SRC emacs-lisp
+  (require 'company)
+  (require 'tss)
+  (customize-set-variable 'tss-completion-engine 'company)
+  (add-to-list 'company-backends #'company-tss)
+  ;;; run (tss-config-default) if you haven't
+#+END_SRC
+
+Evaluate the above and reload the buffer.
+
+*NOTES:* if =auto-complete-mode= always get enabled after loading buffers, run
+
+: (global-auto-complete-mode -1)
+
+or remove =typescript-mode= from =ac-modes=. This is most likely to happen to
+users using vanilla =tss=, which activates =AC= by default.
+
+* Differences between vanilla =tss= and my forked version.
+
+*PLANNED*
+* TODO TODO Lists [0/2]
  
 ** TODO A function to clean dangled tss processes
 dangled tss processes do happen (though not exactly knowing how)
 
 like what `tramp' does.
 
+
+** TODO Special comment completions are not done yet.
+keywords part seem to be supported by =ts-tools= by default.
