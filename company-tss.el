@@ -13,6 +13,8 @@
 ;;; into environment anyway). Company mode feels much slower than AC on
 ;;; document, body stuff...
 
+(require 'tss)
+
 (require 'cl-lib)
 (require 'dash)
 (require 's)
@@ -210,7 +212,7 @@ about command line building."
          (linecount 0)
          (posarg nil)
          (updated-source (with-temp-buffer
-                           (insert-buffer curbuf)
+                           (insert-buffer-substring curbuf)
                            (goto-char curpt)
                            (let ((company-prefix prefix))
                              ;; to handle prefix well, we need have company-prefix setup
@@ -259,17 +261,16 @@ about command line building."
 (defun company-tss-get-annotation (candidate)
   (format " (%s)" (get-text-property 0 :annotation candidate)))
 
-(defun company-tss-member (command &optional arg &rest ignored)
+(defun company-tss (command &optional arg &rest ignored)
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-tss-member))
-    (prefix (company-tss-get-prefix))
+    (prefix (and (tss--active-p)
+                 (company-tss-get-prefix)))
     (candidates (company-tss-get-candidates arg))
     (meta (company-tss-get-meta arg))
     (doc-buffer (company-doc-buffer (company-tss-get-doc arg)))
     ;; TODO better formatting for annotations
     (annotation (company-tss-get-annotation arg))))
 
-(global-set-key (kbd "C-z t")
-                (lambda () (interactive)
-                  (company-begin-backend #'company-tss-member)))
+(provide 'company-tss)
