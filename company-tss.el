@@ -60,19 +60,19 @@ NOT used yet.")
     (let ((desc type)
           (start 0))
       ;; colorize property
-      (string-match "(\\([^ \t]+\\))" desc start)
-      (add-face-text-property (match-beginning 1)
-                              (match-end 1)
-                              'font-lock-preprocessor-face
-                              nil desc)
-      (setq start (match-end 0))
+      (when (string-match "(\\([^ \t]+\\))" desc start)
+        (add-face-text-property (match-beginning 1)
+                                (match-end 1)
+                                'font-lock-preprocessor-face
+                                nil desc)
+        (setq start (match-end 0)))
       ;; colorize candidate
-      (string-match name desc start)
-      (add-face-text-property (match-beginning 0)
-                              (match-end 0)
-                              'font-lock-function-name-face
-                              nil desc)
-      (setq start (match-end 0))
+      (when (string-match name desc start)
+        (add-face-text-property (match-beginning 0)
+                                (match-end 0)
+                                'font-lock-function-name-face
+                                nil desc)
+        (setq start (match-end 0)))
       ;; colorize params or type
       (pcase sign
         ("f"
@@ -86,19 +86,20 @@ NOT used yet.")
                                      (match-end 1)
                                      'font-lock-variable-name-face
                                      nil desc))
-           (add-face-text-property (match-beginning 2)
-                                   (match-end 2)
-                                   'font-lock-type-face
-                                   nil desc)
+           (when (match-beginning 2)
+               (add-face-text-property (match-beginning 2)
+                                    (match-end 2)
+                                    'font-lock-type-face
+                                    nil desc))
            (setq start (match-end 0))))
         ;; colorize variable type
         ("v"
-         (string-match ": [ \t]*\\([a-zA-Z0-9_]+\\)"
-                       desc start)
-         (add-face-text-property (match-beginning 1)
-                                 (match-end 1)
-                                 'font-lock-type-face
-                                 nil desc)))
+         (when (string-match ": [ \t]*\\([a-zA-Z0-9_]+\\)"
+                             desc start)
+           (add-face-text-property (match-beginning 1)
+                                   (match-end 1)
+                                   'font-lock-type-face
+                                   nil desc))))
       desc)))
 
 (defun company-tss--format-document (name kind type doc)
@@ -204,8 +205,10 @@ about command line building."
 (defun company-tss-sync-get-data (candidate)
   (let* ((curbuf (current-buffer))
          (curpt (point))
-         (posarg nil)                   ;to be updated in the updated source
          (prefix company-prefix)
+         ;; to be updated in the updated source
+         (linecount 0)
+         (posarg nil)
          (updated-source (with-temp-buffer
                            (insert-buffer curbuf)
                            (goto-char curpt)
@@ -213,11 +216,13 @@ about command line building."
                              ;; to handle prefix well, we need have company-prefix setup
                              ;; TODO maybe we should handle prefix manually?
                              (company--insert-candidate candidate))
-                           (setq posarg (tss--get-position-argument))
+                           (setq posarg (tss--get-position-argument)
+                                 linecount (count-lines (point-min) (point-max)))
                            (buffer-string)))
          (fpath  (buffer-file-name))
          (cmdstr (format "quickInfo %s %s" posarg fpath))
-         (info (when (tss--sync-server :source updated-source)
+         (info (when (tss--sync-server :source updated-source
+                                       :linecount linecount)
                  (tss--get-server-response cmdstr :waitsec 2))))
     (add-text-properties 0 (length candidate)
                          (let ((kind

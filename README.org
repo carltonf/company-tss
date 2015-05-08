@@ -1,0 +1,18 @@
+Company backend for [[https://github.com/aki2o/emacs-tss][aki2o/emacs-tss]] with colorful doc ;)
+
+*WIP*: incomplete and unstable yet.
+
+* *NOTE* The package can only work with my forked version of emacs-tss
+
+Patches are sent through pull requests already. The original author is busy now,
+so wait.
+
+At the meantime, use the forked version and enjoy ;)
+
+* TODO lists [0/1]
+ 
+** TODO A function to clean dangled tss processes
+dangled tss processes do happen (though not exactly knowing how)
+
+like what `tramp' does.
+
