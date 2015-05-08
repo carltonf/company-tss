@@ -1,9 +1,9 @@
 ;;; Some code in tss.el is patched to support my design in "company-tss.el"
 (defun* tss--sync-server (&key waitsec path buff
-                               updated-source)
-  "* Add UPDATED-SOURCE(:string) to support custom buffer content.
+                               source)
+  "* Add SOURCE(:string) to support custom buffer content.
 The priority order of content to be sent with 'update' command
-is (from hi to low): updated-source, buff, (current-buffer)."
+is (from hi to low): source, buff, (current-buffer)."
   (when (tss--active-p)
     (save-restriction
       (widen)
@@ -20,9 +20,9 @@ is (from hi to low): updated-source, buff, (current-buffer)."
           (setq tss--incomplete-server-response "")
           (setq tss--json-response-start-char "")
           (setq tss--json-response-end-char "")
-          (tss--send-string proc (or updated-source
+          (tss--send-string proc (or source
                                      (with-current-buffer (or buff (current-buffer))
-                                       (buffer-substring))))
+                                       (buffer-string))))
           (tss--trace "Start wait sync server.")
           (while (and (< waiti maxwaiti)
                       (not tss--server-response))
@@ -34,3 +34,6 @@ is (from hi to low): updated-source, buff, (current-buffer)."
                 (t
                  (tss--trace "Finished sync server.")
                  (eq tss--server-response 'succeed))))))))
+
+;;; TODO there are can dangled tss processes, have a function to clean them all (like
+;;; what `tramp' does)

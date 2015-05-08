@@ -1,7 +1,7 @@
 ;;; Many things still left to be desired.
 ;;;
 ;;; TODO
-;;; 
+;;;
 ;;; 1. DONE better `tss--sync-server', modify the source sent on-the-fly to
 ;;; include newly selected candidate, so we can have access to info from
 ;;; "definition", "references" and etc. If we can have this, we can always use
@@ -14,36 +14,17 @@
 ;;; document, body stuff...
 
 (require 'cl-lib)
+(require 'dash)
+(require 's)
 
 ;;; These two variables serve to boost performance (not strictly necessary)
-(defvar-local tss--last-company-start-point 1)
-(defvar-local tss--last-company-candidates nil)
 (defvar-local company-tss-candidates-info-cache (make-hash-table :test #'equal)
-  "An info candidates cache(hash) to hold data for this completion")
+  "An info candidates cache(hash) to hold data for this completion.
 
-(defun tss--get-company-member-candidates ()
-  (tss--trace "start get company member candidates.")
-  (tss--get-company-candidates t))
+NOT used yet.")
 
-(defun tss--get-company-candidates-cached? ()
-  "Test whether we can reuse results in `tss--last-company-candidates'."
-  (when (> tss--last-company-start-point (point-max))
-    (setq tss--last-company-start-point (point-max)))
-  (let* ((currpt (point))
-         (code (buffer-substring-no-properties
-                currpt tss--last-company-start-point)))
-    (if (and (> currpt tss--last-company-start-point)
-             (string-match "\\`[a-zA-Z0-9_]+\\'" code))
-        (progn (tss--trace "Last company candidates cached. code[%s]" code)
-               t)
-      (tss--trace "No last company candidates cached. code[%s]" code)
-      nil))
-  ;; TODO always return nil, as the cache management is not done (do we really
-  ;; need this?)
-  nil)
-
-;;; TODO using Unicode char to make it look better
-(defun company-tss-get-sign (kind)
+;;; TODO using Unicode char to make signs look better
+(defun company-tss--get-sign (kind)
   "Return a symbolic sign for KIND"
   (let ((kind (tss--stringify-response-element kind)))
     (cond ((member kind '("keyword" "builtin-keyword"))  "w")
@@ -55,20 +36,20 @@
           ((tss--function-kind-p kind)                   "f")
           ((string= kind "unknown")                      "")
           (t
-           (tss--warn "found unknown server response for kind : %s" kind)
+           (warn "found unknown server response for kind : %s" kind)
            ""))))
 
 ;;; TODO needed?
-(defcustom tss-company-summary-truncate-length 128
-  "Length for truncation of candidate summary of auto-complete.el."
+(defcustom company-tss--meta-truncate-length 64
+  "Length for truncation of company meta."
   :type 'integer
-  :group 'tss)
+  :group 'company-tss)
 
-(defun tss--get-company-summary (sum)
-  (when (stringp sum)
-    (let ((str (replace-regexp-in-string "\r?\n" " " sum)))
+(defun company-tss--format-meta (meta)
+  (when (stringp meta)
+    (let ((str (replace-regexp-in-string "\r?\n" " " meta)))
       (truncate-string-to-width
-       str tss-company-summary-truncate-length 0 nil "..."))))
+       str company-tss--meta-truncate-length 0 nil "..."))))
 
 ;;; TODO too basic, too cumbersome, we need better support from ts-tools
 (defun company-tss--colorize-type (name sign type)
@@ -120,11 +101,11 @@
                                  nil desc)))
       desc)))
 
-(defun company-tss-format-document (name kind type doc)
+(defun company-tss--format-document (name kind type doc)
   "Format a documentation for `company-doc', note the naming of
 the arguments are from `ts-tools', a very unfortunate and
 misleading names."
-  (let* ((sign (company-tss-get-sign kind))
+  (let* ((sign (company-tss--get-sign kind))
          (kind (upcase (tss--stringify-response-element kind)))
          (type (company-tss--colorize-type name sign
                                            (or type "unknown")))
@@ -148,49 +129,45 @@ misleading names."
   "Retrieve completion candidates for current point.
 
 NOTE: 1. the prefix is NOT passed to tss-server, the ts-tools can
-figure this out according to file position directly. 
+figure this out according to file position directly.
 
 2. MEMBERP is NOT used any more, retrieving candidates will
 always use completions-brief. Documents are retrieved later.
 
 see https://github.com/clausreinke/typescript-tools for details
 about command line building."
-  (yaxception:$
-    (yaxception:try
-      (if (tss--get-company-candidates-cached?)
-          tss--last-company-candidates
-        (setq tss--last-company-start-point (point))
-        (setq tss--last-company-candidates
-              (when (tss--sync-server)
-                (let* ((posarg (tss--get-position-argument))
-                       ;; TODO what `memberarg' used for? Don't find this
-                       ;; argument in ts-tools doc
-                       ;; (memberarg (cond (memberp "true")
-                       ;;                  (t       "false")))
-                       (fpath (expand-file-name (buffer-file-name)))
-                       (cmdstr (format "completions-brief %s %s"
-                                       posarg fpath))
-                       ;; ret format: isMemberCompletion,
-                       ;; isNewIdentifierLocation, and entries array, there can
-                       ;; also be a prefix string.
-                       (ret (tss--get-server-response cmdstr :waitsec 2))
-                       (entries (when (listp ret)
-                                  (cdr (assoc 'entries ret)))))
-                  (mapcar (lambda (e)
-                            (let ((name (cdr (assoc 'name e)))
-                                  (kind (cdr (assoc 'kind e))))
-                              (propertize name
-                                          :annotation (company-tss-get-sign kind)
-                                          :kind kind
-                                          ;; :meta (tss--get-company-summary type)
-                                          )))
-                          entries))))))
-    (yaxception:catch 'error e
-      (tss--show-message "%s" (yaxception:get-text e))
-      (tss--error "failed get ac candidates : %s\n%s"
-                  (yaxception:get-text e)
-                  (yaxception:get-stack-trace-string e))
-      (setq tss--last-company-candidates nil))))
+  (when (tss--sync-server)
+    (let* ((posarg (tss--get-position-argument))
+           ;; TODO what `memberarg' used for? Don't find this
+           ;; argument in ts-tools doc. As I believe, this represents
+           ;; an deprecated interface in ts-tools.
+           ;;
+           ;; (memberarg (cond (memberp "true")
+           ;;                  (t       "false")))
+           (fpath (expand-file-name (buffer-file-name)))
+           (cmdstr (format "completions-brief %s %s"
+                           posarg fpath))
+           ;; ret format: isMemberCompletion,
+           ;; isNewIdentifierLocation, and entries array, there can
+           ;; also be a prefix string.
+           (ret (tss--get-server-response cmdstr :waitsec 2))
+           (entries (when (listp ret)
+                      (cdr (assoc 'entries ret)))))
+      (mapcar (lambda (e)
+                (let ((name (cdr (assoc 'name e)))
+                      (kind (cdr (assoc 'kind e))))
+                  (propertize name
+                              :annotation (company-tss--get-sign kind)
+                              :kind kind)))
+              entries))))
+
+(defun company-tss--get-active-code-prefix (re)
+  "Retrieve prefix only in active code region."
+  (save-excursion
+    (when (and (tss--active-code-point-p)
+               (re-search-backward (concat re "\\=") nil t))
+      (or (match-beginning 1)
+          (match-beginning 0)))))
 
 ;; 1. `tss--active-code-prefix' uses text faces to make sure the current
 ;; point is in code (not string or comment region)
@@ -199,30 +176,29 @@ about command line building."
         ;; `tss--get-active-code-prefix' only returns starting position for prefix,
         ;; bad naming... but as noted in `tss--company-get-member-candates', the
         ;; exact prefix doesn't matter, tss-server can handle it all.
-        (start (save-excursion
-                 (or
-                  ;; member
-                  (tss--get-active-code-prefix "\\.\\([a-zA-Z0-9_]*\\)")
-                  ;; type
-                  (tss--get-active-code-prefix ": ?\\([a-zA-Z0-9_]*\\)")
-                  ;; new
-                  (tss--get-active-code-prefix "\\<new +\\([a-zA-Z0-9_]*\\)")
-                  ;; extends
-                  (tss--get-active-code-prefix " +extends +\\([a-zA-Z0-9_]*\\)")
-                  ;; implements
-                  (tss--get-active-code-prefix " +implements +\\([a-zA-Z0-9_]*\\)")
-                  ;; tag
-                  (tss--get-active-code-prefix "[^/] *<\\([a-zA-Z0-9_]*\\)")
-                  ;; anything
-                  ;; TODO what is this?
-                  (tss--get-active-code-prefix "\\(?:^\\|[^a-zA-Z0-9_.]\\) *\\([a-zA-Z0-9_]+\\)")))))
+        (start (-some #'company-tss--get-active-code-prefix
+                      '( ;; member
+                        "\\.\\([a-zA-Z0-9_]*\\)"
+                        ;; type
+                        ": ?\\([a-zA-Z0-9_]*\\)"
+                        ;; new
+                        "\\<new +\\([a-zA-Z0-9_]*\\)"
+                        ;; extends
+                        " +extends +\\([a-zA-Z0-9_]*\\)"
+                        ;; implements
+                        " +implements +\\([a-zA-Z0-9_]*\\)"
+                        ;; tag
+                        "[^/] *<\\([a-zA-Z0-9_]*\\)"
+                        ;; anything
+                        ;; TODO what is this?
+                        "\\(?:^\\|[^a-zA-Z0-9_.]\\) *\\([a-zA-Z0-9_]+\\)"))))
     (when start
       (buffer-substring-no-properties start curpt))))
 
 ;;; TODO have some idle/async way to fetch info about candidates in the
 ;;; background
 ;;; TODO more info like: definition, location, even script snippets, references and etc.
-;;; 
+;;;
 ;;; BUG The following doesn't do well with advanced types like interface, in
 ;;; fact I think the ts-tools return something too ambiguous....
 (defun company-tss-sync-get-data (candidate)
@@ -241,7 +217,7 @@ about command line building."
                            (buffer-string)))
          (fpath  (buffer-file-name))
          (cmdstr (format "quickInfo %s %s" posarg fpath))
-         (info (when (tss--sync-server :updated-source updated-source)
+         (info (when (tss--sync-server :source updated-source)
                  (tss--get-server-response cmdstr :waitsec 2))))
     (add-text-properties 0 (length candidate)
                          (let ((kind
@@ -254,10 +230,12 @@ about command line building."
                                 (get-text-property 0 :kind candidate))
                                (rawdesc (cdr (assoc 'type info)))
                                (doc-comment (cdr (assoc 'docComment info))))
-                           `(:meta
-                             ,rawdesc
+                           ;; TODO whether we really need format-meta? the
+                           ;; following way can also enjoy colorization from
+                           ;; format-document.
+                           `(:meta ,rawdesc
                              :doc
-                             ,(company-tss-format-document
+                             ,(company-tss--format-document
                                candidate kind rawdesc doc-comment)))
                          candidate)))
 
@@ -281,13 +259,11 @@ about command line building."
   (cl-case command
     (interactive (company-begin-backend 'company-tss-member))
     (prefix (company-tss-get-prefix))
-    ;; arg is the prefix
     (candidates (company-tss-get-candidates arg))
-    ;; arg is the current selected candidate
     (meta (company-tss-get-meta arg))
     (doc-buffer (company-doc-buffer (company-tss-get-doc arg)))
-    ;; TODO solve the formatting issue for annotations
-    (annotation (company-tss-get-annotation arg)))) 
+    ;; TODO better formatting for annotations
+    (annotation (company-tss-get-annotation arg))))
 
 (global-set-key (kbd "C-z t")
                 (lambda () (interactive)
