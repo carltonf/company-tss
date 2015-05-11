@@ -36,6 +36,8 @@ NOT used yet.")
           ((string= kind "class")                        "c")
           ((member kind '("var" "property" "parameter")) "v")
           ((tss--function-kind-p kind)                   "f")
+          ((string= kind "getter")                       "g")
+          ((string= kind "type")                         "t")
           ((string= kind "unknown")                      "")
           (t
            (warn "found unknown server response for kind : %s" kind)
