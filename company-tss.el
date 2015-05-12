@@ -38,6 +38,7 @@ NOT used yet.")
           ((tss--function-kind-p kind)                   "f")
           ((string= kind "getter")                       "g")
           ((string= kind "type")                         "t")
+          ((string= kind "local var")                    "l")
           ((string= kind "unknown")                      "")
           (t
            (warn "found unknown server response for kind : %s" kind)
