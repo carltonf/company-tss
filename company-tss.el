@@ -57,6 +57,8 @@ NOT used yet.")
        str company-tss--meta-truncate-length 0 nil "..."))))
 
 ;;; TODO too basic, too cumbersome, we need better support from ts-tools
+;;; May-28-2015 14:49:44 CST: actually for a start, we can use `typescript-mode'
+;;; to get a decent colorization.
 (defun company-tss--colorize-type (name sign type)
   "Use regexp to colorize TYPE. Return colorized type."
   (if (or (string-empty-p sign)
