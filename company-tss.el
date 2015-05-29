@@ -19,6 +19,8 @@
 (require 'dash)
 (require 's)
 
+;;;: Helpers
+
 ;;; These two variables serve to boost performance (not strictly necessary)
 (defvar-local company-tss-candidates-info-cache (make-hash-table :test #'equal)
   "An info candidates cache(hash) to hold data for this completion.
@@ -43,18 +45,6 @@ NOT used yet.")
           (t
            (warn "found unknown server response for kind : %s" kind)
            ""))))
-
-;;; TODO needed?
-(defcustom company-tss--meta-truncate-length 64
-  "Length for truncation of company meta."
-  :type 'integer
-  :group 'company-tss)
-
-(defun company-tss--format-meta (meta)
-  (when (stringp meta)
-    (let ((str (replace-regexp-in-string "\r?\n" " " meta)))
-      (truncate-string-to-width
-       str company-tss--meta-truncate-length 0 nil "..."))))
 
 ;;; TODO too basic, too cumbersome, we need better support from ts-tools
 ;;; May-28-2015 14:49:44 CST: actually for a start, we can use `typescript-mode'
@@ -132,40 +122,7 @@ NOT used yet.")
             (propertize "Comment: \n" 'face 'info-title-4)
             doc "\n")))
 
-(defun company-tss-get-candidates (&optional prefix)
-  "Retrieve completion candidates for current point.
-
-NOTE: PREFIX is NOT passed to tss, the tss can figure this
-out according to file position directly."
-  (mapcar (lambda (e)
-            (let ((name (tss-utils/assoc-path e 'name))
-                  (kind (tss-utils/assoc-path e 'kind)))
-              (propertize name
-                          :annotation (company-tss--get-sign kind)
-                          ;; TODO for unknown reason, `kind' returned from
-                          ;; `get-doc' is different from `get-completions',
-                          ;; which seems to a more appropriate one, very
-                          ;; weird..... So pass this value through `:kind'
-                          ;; property.
-                          :kind kind)))
-          (tss-utils/assoc-path (tss--get-completions) 'entries)))
-
-(defun company-tss--get-re-prefix (re)
-  "Get prefix with regards to regular expression RE."
-  (save-excursion
-    (when (re-search-backward (concat re "\\=") nil t)
-      (or (match-beginning 1)
-          (match-beginning 0)))))
-
-(defun company-tss--code-point? ()
-  "Check whether current point is a code point, not within
-comment or string literals."
-  ;; TODO the following uses text faces, not very reliable. Use parsing
-  ;; facilities.
-  (let ((fc (get-text-property (point) 'face)))
-    (not (memq fc '(font-lock-comment-face
-                    font-lock-string-face)))))
-
+;;;: Prefix
 (defun company-tss-get-prefix ()
   (when (company-tss--code-point?)
     ;; As noted in `tss--company-get-member-candates', the exact prefix doesn't
@@ -190,29 +147,54 @@ comment or string literals."
       (when start
         (buffer-substring-no-properties start (point))))))
 
-(defun company-tss--get-source-with-candidate (candidate)
-  "Get new source by changing the current buffer content with CANDIDATE inserted.
+(defun company-tss--get-re-prefix (re)
+  "Get prefix matching regular expression RE."
+  (save-excursion
+    (when (re-search-backward (concat re "\\=") nil t)
+      (or (match-beginning 1)
+          (match-beginning 0)))))
 
-Return an assoc list:
-    ((line . <line number after candidate inserted>)
-     (column . <column number after candidate inserted>)
-     (linecount . <total line count after candidate inserted>)
-     (source . <updated source>)).
-"
-  (let ((curbuf (current-buffer))
-        (prefix company-prefix)
-        (curpt (point)))
-    (with-temp-buffer
-      (insert-buffer-substring curbuf)
-      (goto-char curpt)
-      ;; to insert candidate correctly have `company-prefix' setup.
-      (setq company-prefix prefix)
-      (company--insert-candidate candidate)
-      ;; result
-      (list `(line . ,(line-number-at-pos))
-            `(column . ,(current-column))
-            `(linecount . ,(count-lines (point-min) (point-max)))
-            `(source . ,(buffer-string))))))
+;; TODO the following uses text faces, not very reliable. Use parsing
+;; facilities.
+(defun company-tss--code-point? ()
+  "Check whether current point is a code point, not within
+comment or string literals."
+  (let ((fc (get-text-property (point) 'face)))
+    (not (memq fc '(font-lock-comment-face
+                    font-lock-string-face)))))
+
+;;;: Candidates
+(defun company-tss-get-candidates (&optional prefix)
+  "Retrieve completion candidates for current point.
+
+NOTE: PREFIX is NOT passed to tss, the tss can figure this
+out according to file position directly."
+  (mapcar (lambda (e)
+            (let ((name (tss-utils/assoc-path e 'name))
+                  (kind (tss-utils/assoc-path e 'kind)))
+              (propertize name
+                          :annotation (company-tss--get-sign kind)
+                          ;; TODO for unknown reason, `kind' returned from
+                          ;; `get-doc' is different from `get-completions',
+                          ;; which seems to a more appropriate one, very
+                          ;; weird..... So pass this value through `:kind'
+                          ;; property.
+                          :kind kind)))
+          (tss-utils/assoc-path (tss--get-completions) 'entries)))
+
+;;;: Meta
+(defun company-tss-get-meta (candidate)
+  (let ((ret (get-text-property 0 :meta candidate)))
+    (if ret ret
+      (company-tss-sync-get-data candidate)
+      (company-tss-get-meta candidate))))
+
+;;;: Doc
+(defun company-tss-get-doc (candidate)
+  (let ((ret (get-text-property 0 :doc candidate)))
+    (if ret ret
+      (company-tss-sync-get-data candidate)
+      (company-tss-get-doc candidate))))
 
 ;;; TODO have some idle/async way to fetch info about candidates in the
 ;;; background
@@ -245,18 +227,30 @@ Return an assoc list:
                                      candidate kind type doc-comment)))
                          candidate)))
 
-(defun company-tss-get-meta (candidate)
-  (let ((ret (get-text-property 0 :meta candidate)))
-    (if ret ret
-      (company-tss-sync-get-data candidate)
-      (company-tss-get-meta candidate))))
+(defun company-tss--get-source-with-candidate (candidate)
+  "Get new source by changing the current buffer content with CANDIDATE inserted.
 
-(defun company-tss-get-doc (candidate)
-  (let ((ret (get-text-property 0 :doc candidate)))
-    (if ret ret
-      (company-tss-sync-get-data candidate)
-      (company-tss-get-doc candidate))))
+Return an assoc list:
+    ((line . <line number after candidate inserted>)
+     (column . <column number after candidate inserted>)
+     (linecount . <total line count after candidate inserted>)
+     (source . <updated source>))."
+  (let ((curbuf (current-buffer))
+        (prefix company-prefix)
+        (curpt (point)))
+    (with-temp-buffer
+      (insert-buffer-substring curbuf)
+      (goto-char curpt)
+      ;; to insert candidate correctly have `company-prefix' setup.
+      (setq company-prefix prefix)
+      (company--insert-candidate candidate)
+      ;; result
+      (list `(line . ,(line-number-at-pos))
+            `(column . ,(current-column))
+            `(linecount . ,(count-lines (point-min) (point-max)))
+            `(source . ,(buffer-string))))))
 
+;;;: Annotation
 (defun company-tss-get-annotation (candidate)
   (format " (%s)" (get-text-property 0 :annotation candidate)))
 
