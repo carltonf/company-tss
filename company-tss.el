@@ -7,7 +7,7 @@
 ;;; into environment anyway). Company mode feels much slower than AC on
 ;;; document, body stuff...
 
-(require 'tss)
+(require 'etss)
 
 (require 'cl-lib)
 (require 'dash)
@@ -16,22 +16,29 @@
 ;;;: Helpers
 
 ;;; These two variables serve to boost performance (not strictly necessary)
-(defvar-local company-tss-candidates-info-cache (make-hash-table :test #'equal)
+(defvar-local company-etss-candidates-info-cache (make-hash-table :test #'equal)
   "An info candidates cache(hash) to hold data for this completion.
 
 NOT used yet.")
 
+(defsubst company-etss--stringify (e)
+  (or (and e (downcase (format "%s" e)))
+      "unknown"))
+
+(defsubst compnay-etss--function-kind? (kind)
+  (member kind '("function" "method" "constructor" "local function")))
+
 ;;; TODO using Unicode char to make signs look better
-(defun company-tss--get-sign (kind)
+(defun company-etss--get-sign (kind)
   "Return a symbolic sign for KIND"
-  (let ((kind (tss--stringify-response-element kind)))
+  (let ((kind (company-etss--stringify kind)))
     (cond ((member kind '("keyword" "builtin-keyword"))  "w")
           ((string= kind "primitive type")               "p")
           ((string= kind "module")                       "m")
           ((string= kind "interface")                    "i")
           ((string= kind "class")                        "c")
           ((member kind '("var" "property" "parameter")) "v")
-          ((tss--function-kind-p kind)                   "f")
+          ((compnay-etss--function-kind? kind)           "f")
           ((string= kind "getter")                       "g")
           ((string= kind "type")                         "t")
           ((string= kind "local var")                    "l")
@@ -44,7 +51,7 @@ NOT used yet.")
 ;;; May-28-2015 14:49:44 CST: actually for a start, we can use `typescript-mode'
 ;;; to get a decent colorization. Unfortunately, `typescript-mode' colorization
 ;;; is too basic for now.
-(defun company-tss--colorize-type (name sign type)
+(defun company-etss--colorize-type (name sign type)
   "Use regexp to colorize TYPE. Return colorized type."
   (if (or (string-empty-p sign)
           (not (member sign '("f" "v"))))
@@ -94,11 +101,11 @@ NOT used yet.")
                                    nil desc))))
       desc)))
 
-(defun company-tss--format-document (name kind type doc)
+(defun company-etss--format-document (name kind type doc)
   "Format a documentation for `company-doc'."
-  (let* ((sign (company-tss--get-sign kind))
-         (kind (upcase (tss--stringify-response-element kind)))
-         (type (company-tss--colorize-type name sign
+  (let* ((sign (company-etss--get-sign kind))
+         (kind (upcase (company-etss--stringify kind)))
+         (type (company-etss--colorize-type name sign
                                            (or type "unknown")))
          (doc (or doc ""))
          (typedesc (pcase sign
@@ -117,12 +124,12 @@ NOT used yet.")
             doc "\n")))
 
 ;;;: Prefix
-(defun company-tss-get-prefix ()
-  (when (company-tss--code-point?)
-    ;; As noted in `tss--company-get-member-candates', the exact prefix doesn't
-    ;; matter to tss, but the company need the prefix to correctly insert
+(defun company-etss-get-prefix ()
+  (when (company-etss--code-point?)
+    ;; As noted in `etss--company-get-member-candates', the exact prefix doesn't
+    ;; matter to `etss', but the company need the prefix to correctly insert
     ;; candidates.
-    (let ((start (-some #'company-tss--get-re-prefix
+    (let ((start (-some #'company-etss--get-re-prefix
                         '( ;; member
                           "\\.\\([a-zA-Z0-9_]*\\)"
                           ;; type
@@ -141,7 +148,7 @@ NOT used yet.")
       (when start
         (buffer-substring-no-properties start (point))))))
 
-(defun company-tss--get-re-prefix (re)
+(defun company-etss--get-re-prefix (re)
   "Get prefix matching regular expression RE."
   (save-excursion
     (when (re-search-backward (concat re "\\=") nil t)
@@ -150,7 +157,7 @@ NOT used yet.")
 
 ;; TODO the following uses text faces, not very reliable. Use parsing
 ;; facilities.
-(defun company-tss--code-point? ()
+(defun company-etss--code-point? ()
   "Check whether current point is a code point, not within
 comment or string literals."
   (let ((fc (get-text-property (point) 'face)))
@@ -158,37 +165,37 @@ comment or string literals."
                     font-lock-string-face)))))
 
 ;;;: Candidates
-(defun company-tss-get-candidates (&optional prefix)
+(defun company-etss-get-candidates (&optional prefix)
   "Retrieve completion candidates for current point.
 
-NOTE: PREFIX is NOT passed to tss, the tss can figure this
+NOTE: PREFIX is NOT passed to etss, the etss can figure this
 out according to file position directly."
   (mapcar (lambda (e)
-            (let ((name (tss-utils/assoc-path e 'name))
-                  (kind (tss-utils/assoc-path e 'kind)))
+            (let ((name (etss-utils/assoc-path e 'name))
+                  (kind (etss-utils/assoc-path e 'kind)))
               (propertize name
-                          :annotation (company-tss--get-sign kind)
+                          :annotation (company-etss--get-sign kind)
                           ;; TODO for unknown reason, `kind' returned from
                           ;; `get-doc' is different from `get-completions',
                           ;; which seems to a more appropriate one, very
                           ;; weird..... So pass this value through `:kind'
                           ;; property.
                           :kind kind)))
-          (tss-utils/assoc-path (tss--get-completions) 'entries)))
+          (etss-utils/assoc-path (etss--get-completions) 'entries)))
 
 ;;;: Meta
-(defun company-tss-get-meta (candidate)
+(defun company-etss-get-meta (candidate)
   (let ((ret (get-text-property 0 :meta candidate)))
     (if ret ret
-      (company-tss-sync-get-data candidate)
-      (company-tss-get-meta candidate))))
+      (company-etss-sync-get-data candidate)
+      (company-etss-get-meta candidate))))
 
 ;;;: Doc
-(defun company-tss-get-doc (candidate)
+(defun company-etss-get-doc (candidate)
   (let ((ret (get-text-property 0 :doc candidate)))
     (if ret ret
-      (company-tss-sync-get-data candidate)
-      (company-tss-get-doc candidate))))
+      (company-etss-sync-get-data candidate)
+      (company-etss-get-doc candidate))))
 
 ;;; TODO have some idle/async way to fetch info about candidates in the
 ;;; background
@@ -196,32 +203,32 @@ out according to file position directly."
 ;;;
 ;;; BUG The following doesn't do well with advanced types like interface, in
 ;;; fact I think the ts-tools return something too ambiguous....
-(defun company-tss-sync-get-data (candidate)
-  (tss--active-test)
-  (let ((doc (let ((client tss--client)
-                   (updated-source (company-tss--get-source-with-candidate candidate)))
-               (tss-client/set-buffer client (current-buffer))
-               (tss-client/sync-buffer-content client
+(defun company-etss-sync-get-data (candidate)
+  (etss--active-test)
+  (let ((doc (let ((client etss--client)
+                   (updated-source (company-etss--get-source-with-candidate candidate)))
+               (etss-client/set-buffer client (current-buffer))
+               (etss-client/sync-buffer-content client
                                                (cdr (assoc 'source updated-source))
                                                (cdr (assoc 'linecount updated-source)))
-               (tss-client/get-doc client
+               (etss-client/get-doc client
                                    (cdr (assoc 'line updated-source))
                                    (cdr (assoc 'column updated-source))))))
     ;; use text properties to carry info
     (add-text-properties 0 (length candidate)
                          (let ((kind (get-text-property 0 :kind candidate))
-                               (type (tss-utils/assoc-path doc 'type))
-                               (doc-comment (tss-utils/assoc-path doc 'docComment)))
+                               (type (etss-utils/assoc-path doc 'type))
+                               (doc-comment (etss-utils/assoc-path doc 'docComment)))
                            ;; TODO whether we really need format-meta? the
                            ;; following way can also enjoy colorization from
                            ;; format-document.
                            `(:meta ,type
                                    :doc
-                                   ,(company-tss--format-document
+                                   ,(company-etss--format-document
                                      candidate kind type doc-comment)))
                          candidate)))
 
-(defun company-tss--get-source-with-candidate (candidate)
+(defun company-etss--get-source-with-candidate (candidate)
   "Get new source by changing the current buffer content with CANDIDATE inserted.
 
 Return an assoc list:
@@ -245,19 +252,19 @@ Return an assoc list:
             `(source . ,(buffer-string))))))
 
 ;;;: Annotation
-(defun company-tss-get-annotation (candidate)
+(defun company-etss-get-annotation (candidate)
   (format " (%s)" (get-text-property 0 :annotation candidate)))
 
-(defun company-tss (command &optional arg &rest ignored)
+(defun company-etss (command &optional arg &rest ignored)
   (interactive (list 'interactive))
   (cl-case command
-    (interactive (company-begin-backend 'company-tss))
-    (prefix (and (tss--active?)
-                 (company-tss-get-prefix)))
-    (candidates (company-tss-get-candidates arg))
-    (meta (company-tss-get-meta arg))
-    (doc-buffer (company-doc-buffer (company-tss-get-doc arg)))
+    (interactive (company-begin-backend 'company-etss))
+    (prefix (and (etss--active?)
+                 (company-etss-get-prefix)))
+    (candidates (company-etss-get-candidates arg))
+    (meta (company-etss-get-meta arg))
+    (doc-buffer (company-doc-buffer (company-etss-get-doc arg)))
     ;; TODO better formatting for annotations
-    (annotation (company-tss-get-annotation arg))))
+    (annotation (company-etss-get-annotation arg))))
 
-(provide 'company-tss)
+(provide 'company-etss)
