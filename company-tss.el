@@ -1,13 +1,7 @@
 ;;; Many things still left to be desired.
 ;;;
 ;;; TODO
-;;;
-;;; 1. DONE better `tss--sync-server', modify the source sent on-the-fly to
-;;; include newly selected candidate, so we can have access to info from
-;;; "definition", "references" and etc. If we can have this, we can always use
-;;; "completions-brief" to speed completions up greatly.
-;;;
-;;; 2. Caching according to lookup. Some lookup is too slow, we should use the
+;;; Caching according to lookup. Some lookup is too slow, we should use the
 ;;; "type" string returned from "quickInfo" to create a hash that have necessary
 ;;; info cached (great for built-in global, maybe we should have them preloaded
 ;;; into environment anyway). Company mode feels much slower than AC on

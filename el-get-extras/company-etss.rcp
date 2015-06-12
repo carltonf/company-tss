@@ -1,0 +1,6 @@
+(:name company-etss
+       :website "https://github.com/emacs-ts-ide/company-etss"
+       :description "Company backend for etss."
+       :type github
+       :pkgname "emacs-ts-ide/company-etss"
+       :depends (company-mode etss))
